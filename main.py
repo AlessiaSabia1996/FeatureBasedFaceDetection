@@ -1,16 +1,20 @@
 import numpy as np
 import cv2 as cv  # OpenCV
 import os
+import re # regular expressions
 
-# get the path/directory
-path_Alessia = "C:/Users/Utente/OneDrive/Desktop/BioID-FaceDatabase-V1.2/"
-path_Carmine = "C:/Users/Carmine Grimaldi/Desktop/CV Dataset/"
 count = 0
-for images in os.listdir(path_Carmine):
+
+global_path = "C:/Users/fborz/OneDrive/Documenti/ComputerVision/dataset/"
+
+MIN_BASE = MIN_HEIGHT = 24
+
+for images in os.listdir(global_path):
 
     # check if the image ends with png
     if images.endswith(".pgm"):
-        img = cv.imread(path_Carmine + "BioID_0321.pgm", 0)
+        img = cv.imread(global_path + images, 0)
+        # img = cv.imread(global_path + "BioID_0321.pgm", 0)
         # cv.imshow("foto", img)
         # cv.waitKey(0)
 
@@ -93,10 +97,10 @@ for images in os.listdir(path_Carmine):
         # cv.imshow('Sobel', edges)
         # cv.waitKey(0)
 
-        top_left_coord = []
-        top_right_coord = []
-        bottom_left_coord = []
-        bottom_right_coord = []
+        top_left_coord = ()
+        top_right_coord = ()
+        bottom_left_coord = ()
+        bottom_right_coord = ()
 
         # Estrapolo le quattro coordinate della finestra di edge:
         for row_index, row in enumerate(edges):
@@ -106,11 +110,9 @@ for images in os.listdir(path_Carmine):
                 if col != 0:  # Allora questo è un pixel di edge
                     # L'ordine di aggiornamento è: top_left, top_right
                     if not top_left_coord:
-                        top_left_coord.append(row_index)
-                        top_left_coord.append(col_index)
-                    elif not top_right_coord and col_index - top_left_coord[1] > 5:
-                        top_right_coord.append(row_index)
-                        top_right_coord.append(col_index)
+                        top_left_coord = (row_index, col_index)
+                    elif not top_right_coord and col_index - top_left_coord[1] > MIN_BASE:
+                        top_right_coord = (row_index, col_index)
 
                 if len(top_left_coord) > 0 and len(top_right_coord) > 0:
                     # Allora ho trovato le due coordinate superiori della finestra
@@ -118,36 +120,29 @@ for images in os.listdir(path_Carmine):
                     column_left = [row_tmp[top_left_coord[1]] for row_tmp in edges]  # top_left_coord[1] è l'indice di colonna
                     column_right = [row_tmp[top_right_coord[1]] for row_tmp in edges]
 
-                    minSize = 24 * 24
-
                     for actual_row_index, actual_row in enumerate(edges):
                         if actual_row_index > top_left_coord[0]:
                             rowSize = actual_row_index - top_left_coord[0]
                             colSize = top_right_coord[1] - top_left_coord[1]
 
-                            if rowSize * colSize >= minSize:
-                                if actual_row[top_left_coord[1]] != 0:
-                                    # Allora questo è il pixel di edge in basso a sinistra
-                                    bottom_left_coord.append(actual_row_index)
-                                    bottom_left_coord.append(top_left_coord[1])
-                                    bottom_right_coord.append(actual_row_index)
-                                    bottom_right_coord.append(top_right_coord[1])
-                                    break
-                                elif actual_row[top_right_coord[1]] != 0:
-                                    # Allora questo è il pixel di edge in basso a destra
-                                    bottom_right_coord.append(actual_row_index)
-                                    bottom_right_coord.append(top_right_coord[1])
-                                    bottom_left_coord.append(actual_row_index)
-                                    bottom_left_coord.append(top_left_coord[1])
-                                    break
+                            if actual_row[top_left_coord[1]] != 0 and actual_row_index - top_left_coord[0] > MIN_HEIGHT:
+                                # Allora questo è il pixel di edge in basso a sinistra
+                                bottom_left_coord = (actual_row_index, top_left_coord[1])
+                                bottom_right_coord = (actual_row_index, top_right_coord[1])
+                                break
+                            elif actual_row[top_right_coord[1]] != 0 and actual_row_index - top_right_coord[0] > MIN_HEIGHT:
+                                # Allora questo è il pixel di edge in basso a destra
+                                bottom_right_coord = (actual_row_index, top_right_coord[1])
+                                bottom_left_coord = (actual_row_index, top_left_coord[1])
+                                break
 
                     if len(bottom_left_coord) < 1 and len(bottom_right_coord) < 1:
                         # Allora non ho trovato un edge inferiore su entrambe le due colonne,
                         # occorre ripulire le informazioni delle coordinate top
-                        top_left_coord.clear()
-                        top_right_coord.clear()
-                        bottom_right_coord.clear()
-                        bottom_left_coord.clear()
+                        top_left_coord = ()
+                        top_right_coord = ()
+                        bottom_right_coord = ()
+                        bottom_left_coord = ()
 
                     # Se ho individuato una finestra ne calcolo la media
                     elif len(bottom_left_coord) > 0 and len(bottom_right_coord) > 0:
@@ -159,7 +154,9 @@ for images in os.listdir(path_Carmine):
                         # if area > 1000:
                         edges_found_gray = edges.copy()
                         edges_found = cv.cvtColor(edges_found_gray, cv.COLOR_GRAY2RGB)
-                        edges_found = cv.rectangle(edges_found, (top_left_coord[1], top_left_coord[0]), (bottom_right_coord[1], bottom_right_coord[0]), (0, 255, 0), thickness=1)
+                        edges_found = cv.rectangle(edges_found, (top_left_coord[1], top_left_coord[0]),
+                                                   (bottom_right_coord[1], bottom_right_coord[0]), (0, 255, 0),
+                                                   thickness=1)
                         cv.namedWindow("Faces", cv.WINDOW_NORMAL)
                         cv.imshow('Faces', edges_found)
                         cv.waitKey(0)
@@ -196,7 +193,39 @@ for images in os.listdir(path_Carmine):
                             sub_reg_col = tmp[y:h, x:w]
                             # faccio il rilevamento degli occhi
                             eyes = eye_cascade.detectMultiScale(sub_reg_img)
+
                             if len(eyes) > 0:
+                                # Attenzione: images ora lo stiamo forzando con la 321
+                                with open(global_path + 'eyeFiles/' + images[:len(images) - 4] + '.eye') as f:
+                                    coordinates = [int(coord) for coord in re.findall(r'\b\d+\b', f.read())]
+                                    print(coordinates)
+                                    # Ricordiamo che eyes è riferito a una sottoregione
+                                    # dell'immagine mentre coordinates all'intera immagine (senza neppure filtraggi)
+
+                                for (ex, ey, ew, eh) in eyes:
+                                    # (ex, ey) colonna x riga top left della sotto finestra
+                                    # (ex+ew, ey+eh) colonna x riga bottom right della sotto finestra
+                                    print(x + ex, y + ey, x + ex + ew,
+                                          y + ey + eh)  # x e y mi permettono di ottenere le coordinate
+                                    # dall'immagine ritagliata a quella intera
+
+                                    # Se la coordinata del dataset dell'occhio destro è contenuta nel rettangolo
+                                    # individuato dalle quattro coordinate allora questo è un occhio e non un falso positivo:
+
+                                    # Controllo occhio dx
+                                    if y + ey <= coordinates[1] <= y + ey + eh and \
+                                            x + ex <= coordinates[0] <= x + ex + ew:
+                                        print("occhio destro trovato")
+                                        cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+
+                                    # Controllo occhio sx
+                                    elif y + ey <= coordinates[3] <= y + ey + eh and \
+                                            x + ex <= coordinates[2] <= x + ex + ew:
+                                        print("occhio sinistro trovato")
+                                        cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                    else:
+                                        print("La seguente non è una face region")
+
                                 cv.rectangle(tmp, (x, y), (w, h), (255, 0, 0), 2)
                                 # sub_reg_col = img.copy()
                                 # sub_reg_col = sub_reg_col[y:h, x:w]
@@ -205,19 +234,20 @@ for images in os.listdir(path_Carmine):
                                 cv.namedWindow("Face", cv.WINDOW_NORMAL)
                                 cv.imshow('Face', tmp)
                                 cv.waitKey(0)
-
+                            else:
+                                print("La seguente non è una face region")
                         else:
                             print("Media = 0")
 
                         # Ripulisco le liste
-                        top_left_coord.clear()
-                        top_right_coord.clear()
-                        bottom_left_coord.clear()
-                        bottom_right_coord.clear()
+                        top_left_coord = ()
+                        top_right_coord = ()
+                        bottom_left_coord = ()
+                        bottom_right_coord = ()
 
             # Ripulisco le liste delle coordinate una volta esaurite le colonne della riga
-            top_left_coord.clear()
-            top_right_coord.clear()
-            bottom_left_coord.clear()
-            bottom_right_coord.clear()
+            top_left_coord = ()
+            top_right_coord = ()
+            bottom_left_coord = ()
+            bottom_right_coord = ()
 print(count)
