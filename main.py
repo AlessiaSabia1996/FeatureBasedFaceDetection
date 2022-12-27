@@ -1,19 +1,24 @@
+import csv
+
 import numpy as np
 import cv2 as cv  # OpenCV
 import os
 import re # regular expressions
-
+from csv import writer
 count = 0
 
+alessia_path = "C:/Users/Utente/OneDrive/Desktop/BioID-FaceDatabase-V1.2/"
 global_path = "C:/Users/fborz/OneDrive/Documenti/ComputerVision/dataset/"
 
 MIN_BASE = MIN_HEIGHT = 24
+normalized_coord = []
 
-for images in os.listdir(global_path):
+
+for images in os.listdir(alessia_path):
 
     # check if the image ends with png
     if images.endswith(".pgm"):
-        img = cv.imread(global_path + images, 0)
+        img = cv.imread(alessia_path + images, 0)
         # img = cv.imread(global_path + "BioID_0321.pgm", 0)
         # cv.imshow("foto", img)
         # cv.waitKey(0)
@@ -196,7 +201,7 @@ for images in os.listdir(global_path):
 
                             if len(eyes) > 0:
                                 # Attenzione: images ora lo stiamo forzando con la 321
-                                with open(global_path + 'eyeFiles/' + images[:len(images) - 4] + '.eye') as f:
+                                with open(alessia_path + 'eyeFiles/' + images[:len(images) - 4] + '.eye') as f:
                                     coordinates = [int(coord) for coord in re.findall(r'\b\d+\b', f.read())]
                                     print(coordinates)
                                     # Ricordiamo che eyes è riferito a una sottoregione
@@ -216,13 +221,20 @@ for images in os.listdir(global_path):
                                     if y + ey <= coordinates[1] <= y + ey + eh and \
                                             x + ex <= coordinates[0] <= x + ex + ew:
                                         print("occhio destro trovato")
-                                        cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                        # cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                        max_value = max(ex+ew, ey+eh)
+                                        normalized_coord.append([ex, ey, ex+ew, ey+eh])
+                                        normalized_coord = normalized_coord / max_value
+
 
                                     # Controllo occhio sx
                                     elif y + ey <= coordinates[3] <= y + ey + eh and \
                                             x + ex <= coordinates[2] <= x + ex + ew:
                                         print("occhio sinistro trovato")
-                                        cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                        # cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                        max_value = max(ex + ew, ey + eh)
+                                        normalized_coord.append([ex, ey, ex + ew, ey + eh])
+                                        normalized_coord = normalized_coord / max_value
                                     else:
                                         print("La seguente non è una face region")
 
@@ -250,4 +262,11 @@ for images in os.listdir(global_path):
             top_right_coord = ()
             bottom_left_coord = ()
             bottom_right_coord = ()
+
+        with open('feature_files.csv', 'a+') as f:
+            writer_obj = writer(f)
+            writer_obj.writerow(normalized_coord)
+            f.close()
+
+        normalized_coord.clear()
 print(count)
