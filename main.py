@@ -1,223 +1,248 @@
-import numpy as np
-import cv2 as cv  # OpenCV
 import os
+import re  # regular expressions
+from csv import writer
+from localDatasetPath import getDatasetPath
+from histogramEqualization import *
+from imageFilters import *
+from edgeDetection import *
+from neuralNetworkTraining import *
 
-# get the path/directory
-path_Alessia = "C:/Users/Utente/OneDrive/Desktop/BioID-FaceDatabase-V1.2/"
-path_Carmine = "C:/Users/Carmine Grimaldi/Desktop/CV Dataset/"
-count = 0
-for images in os.listdir(path_Carmine):
+# Costanti
+MIN_BASE = MIN_HEIGHT = 24  # Dimensioni delle sotto-finestre da individuare
 
-    # check if the image ends with png
-    if images.endswith(".pgm"):
-        img = cv.imread(path_Carmine + "BioID_0321.pgm", 0)
-        # cv.imshow("foto", img)
-        # cv.waitKey(0)
 
-        # Histogram equalization: considera il contrasto globale dell'immagine, spesso non e' una buona idea
-        # equ = cv.equalizeHist(img)
-        # res = np.hstack((img, equ))  # Stack di immagini fianco a fianco
-        # cv.namedWindow("SX: Originale, DX: Equalizzata", cv.WINDOW_NORMAL)
-        # cv.imshow('SX: Originale, DX: Equalizzata', res)
-        # cv.waitKey(0)
+def main():
+    # Carico il dataset
+    dataset = np.loadtxt('feature_files.csv', delimiter=',')
 
-        # Histogram equalization 2: adaptive histogram equalization
-        clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        cl1 = clahe.apply(img)
-        # res = np.hstack((img, equ, cl1))  # Stack di immagini fianco a fianco
-        # cv.namedWindow("SX: Originale, DX: Equalizzata", cv.WINDOW_NORMAL)
-        # cv.imshow('SX: Originale, DX: Equalizzata', res)
-        # cv.waitKey(0)
+    # Test addestramento rete neurale
+    looTrainNeuralNetwork(dataset, epochs=50)
+    kfoldTrainNeuralNetwork(dataset, epochs=50)
 
-        # Testing OpenCV Median Filter
-        # median = cv.medianBlur(equ, 3)
-        # res = np.hstack((img, median))
-        # cv.namedWindow("SX: Originale, DX: Equalizzata", cv.WINDOW_NORMAL)
-        # cv.imshow('SX: Originale, DX: Equalizzata', res)
-        # cv.waitKey(0)
+    # Indice del numero di sotto-finestre individuate in tutte le immagini del dataset
+    count = 0
 
-        # Testing OpenCV Median Filter 2
-        median2 = cv.GaussianBlur(cl1, (5, 5), cv.BORDER_CONSTANT)
-        # median2 = cv.medianBlur(median2, 5)
-        # res = np.hstack((median, median2))
-        # cv.namedWindow("Test media + mediana", cv.WINDOW_NORMAL)
-        # cv.imshow('Test media + mediana', median2)
-        # cv.waitKey(0)
+    # Recupero dei path locali al dataset
+    alessia_path = getDatasetPath("alessia")
+    francesco_path = getDatasetPath("francesco")
+    carmine_path = getDatasetPath("carmine")
 
-        # ---- Apply automatic Canny edge detection using the computed median----
-        sigma = 0.33
-        v = np.median(median2)
-        lower = int(max(0, (1.0 - sigma) * v))
-        upper = int(min(255, (1.0 + sigma) * v))
+    # Definizione del path locale al dataset da utilizzare da qui in poi
+    global_path = carmine_path
 
-        edges = cv.Canny(median2, threshold1=lower, threshold2=upper, L2gradient=True)
-        # cv.namedWindow("Canny", cv.WINDOW_NORMAL)
-        # cv.imshow('Canny', edges)
-        # cv.waitKey(0)
+    for images in os.listdir(global_path):
+        # check if the image ends with png
+        if images.endswith(".pgm"):
+            img = cv.imread(global_path + images, 0)
+            # cv.imshow("foto", img)
+            # cv.waitKey(0)
 
-        # usiamo il modello preaddestrato di Viola Jones che sta nella libreria
-        eye_cascade = cv.CascadeClassifier(cv.data.haarcascades + 'haarcascade_eye.xml')
+            # Standard histogram equalization:
+            # equ = stdHistogramEqualization(img)
+            # res = np.hstack((img, equ))  # Stack di immagini fianco a fianco
+            # cv.namedWindow("SX: Originale, DX: Equalizzata", cv.WINDOW_NORMAL)
+            # cv.imshow('SX: Originale, DX: Equalizzata', res)
+            # cv.waitKey(0)
 
-        ''' 
-        grad_x = cv.Sobel(median2, cv.CV_16S, 1, 0, ksize=3, scale=1, delta=0, borderType=cv.BORDER_DEFAULT)
-        grad_y = cv.Sobel(median2, cv.CV_16S, 0, 1, ksize=3, scale=1, delta=0, borderType=cv.BORDER_DEFAULT)
-        abs_grad_x = cv.convertScaleAbs(grad_x)
-        abs_grad_y = cv.convertScaleAbs(grad_y)
-        # edges è una matrice contenente soli 0, 128 o 256
-        edges = cv.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
+            # Histogram equalization 2: adaptive histogram equalization
+            clahe = adaptiveHistogramEqualization(img, clipLimit=2.0, tileGridSize=(8, 8))
+            # res = np.hstack((img, equ, clahe))  # Stack di immagini fianco a fianco
+            # cv.namedWindow("SX: Originale, DX: Equalizzata", cv.WINDOW_NORMAL)
+            # cv.imshow('SX: Originale, DX: Equalizzata', res)
+            # cv.waitKey(0)
 
-        retval, edges = cv.threshold(edges, 70, 255, cv.THRESH_BINARY)
+            # Test filtro mediano OpenCV
+            # median = medianBlur(equ, 3)
+            # res = np.hstack((img, median))
+            # cv.namedWindow("SX: Originale, DX: Equalizzata", cv.WINDOW_NORMAL)
+            # cv.imshow('SX: Originale, DX: Equalizzata', res)
+            # cv.waitKey(0)
 
-        # Edge thinning:
-        # Structuring Element
-        kernel = cv.getStructuringElement(cv.MORPH_CROSS, (3, 3))
-        # Create an empty output image to hold values
-        thin = np.zeros(img.shape, dtype='uint8')
+            # Test filtro Gaussiano OpenCV
+            gaussian = gaussianBlur(clahe, (5, 5), cv.BORDER_CONSTANT)
+            # res = np.hstack((median, gaussian))
+            # cv.namedWindow("Confronto filtro Mediano e Gaussiano", cv.WINDOW_NORMAL)
+            # cv.imshow('Confronto filtro Mediano e Gaussiano', res)
+            # cv.waitKey(0)
 
-        # Loop until erosion leads to an empty set
-        while cv.countNonZero(edges) != 0:
-            # Erosion
-            erode = cv.erode(edges, kernel)
-            # Opening on eroded image
-            opening = cv.morphologyEx(erode, cv.MORPH_OPEN, kernel)
-            # Subtract these two
-            subset = erode - opening
-            # Union of all previous sets
-            thin = cv.bitwise_or(subset, thin)
-            # Set the eroded image for next iteration
-            edges = erode.copy()
-        edges = thin
-        '''
-        # cv.imwrite("C:/Users/Utente/OneDrive/Desktop/BioID-FaceDatabase-V1.2/DatasetPreprocessed/" + str(images), grad)
-        # cv.namedWindow("Sobel", cv.WINDOW_NORMAL)
-        # cv.imshow('Sobel', edges)
-        # cv.waitKey(0)
+            edges = cannyEdgeDetection(sigma=0.33, img=gaussian)
+            # cv.namedWindow("Canny", cv.WINDOW_NORMAL)
+            # cv.imshow('Canny', edges)
+            # cv.waitKey(0)
 
-        top_left_coord = []
-        top_right_coord = []
-        bottom_left_coord = []
-        bottom_right_coord = []
+            # Caricamento del modello preaddestrato del classificatore di Viola-Jones di OpenCV
+            eye_cascade = cv.CascadeClassifier(cv.data.haarcascades + 'haarcascade_eye.xml')
 
-        # Estrapolo le quattro coordinate della finestra di edge:
-        for row_index, row in enumerate(edges):
-            for col_index, col in enumerate(row):
+            # edges = sobelEdgeDetection(img=gaussian, kernelSize=3)
+            # cv.namedWindow("Sobel", cv.WINDOW_NORMAL)
+            # cv.imshow('Sobel', edges)
+            # cv.waitKey(0)
 
-                # i. Search for top-left, top-right, bottomleft and bottom-right coordinates.
-                if col != 0:  # Allora questo è un pixel di edge
-                    # L'ordine di aggiornamento è: top_left, top_right
-                    if not top_left_coord:
-                        top_left_coord.append(row_index)
-                        top_left_coord.append(col_index)
-                    elif not top_right_coord and col_index - top_left_coord[1] > 5:
-                        top_right_coord.append(row_index)
-                        top_right_coord.append(col_index)
+            top_left_coord = ()
+            top_right_coord = ()
+            bottom_left_coord = ()
+            bottom_right_coord = ()
 
-                if len(top_left_coord) > 0 and len(top_right_coord) > 0:
-                    # Allora ho trovato le due coordinate superiori della finestra
-                    # ricerco il pixel di edge verso le colonne di queste coordinate
-                    column_left = [row_tmp[top_left_coord[1]] for row_tmp in edges]  # top_left_coord[1] è l'indice di colonna
-                    column_right = [row_tmp[top_right_coord[1]] for row_tmp in edges]
+            # Estrapolo le quattro coordinate della finestra di edge:
+            for row_index, row in enumerate(edges):
+                for col_index, col in enumerate(row):
 
-                    minSize = 24 * 24
+                    # i. Search for top-left, top-right, bottomleft and bottom-right coordinates.
+                    if col != 0:  # Allora questo è un pixel di edge
+                        # L'ordine di aggiornamento è: top_left, top_right
+                        if not top_left_coord:
+                            top_left_coord = (row_index, col_index)
+                        elif not top_right_coord and col_index - top_left_coord[1] > MIN_BASE:
+                            top_right_coord = (row_index, col_index)
 
-                    for actual_row_index, actual_row in enumerate(edges):
-                        if actual_row_index > top_left_coord[0]:
-                            rowSize = actual_row_index - top_left_coord[0]
-                            colSize = top_right_coord[1] - top_left_coord[1]
+                    if len(top_left_coord) > 0 and len(top_right_coord) > 0:
+                        # Allora ho trovato le due coordinate superiori della finestra
+                        # ricerco il pixel di edge verso le colonne di queste coordinate
 
-                            if rowSize * colSize >= minSize:
-                                if actual_row[top_left_coord[1]] != 0:
+                        for actual_row_index, actual_row in enumerate(edges):
+                            if actual_row_index > top_left_coord[0]:
+                                if actual_row[top_left_coord[1]] != 0 and \
+                                        actual_row_index - top_left_coord[0] > MIN_HEIGHT:
                                     # Allora questo è il pixel di edge in basso a sinistra
-                                    bottom_left_coord.append(actual_row_index)
-                                    bottom_left_coord.append(top_left_coord[1])
-                                    bottom_right_coord.append(actual_row_index)
-                                    bottom_right_coord.append(top_right_coord[1])
+                                    bottom_left_coord = (actual_row_index, top_left_coord[1])
+                                    bottom_right_coord = (actual_row_index, top_right_coord[1])
                                     break
-                                elif actual_row[top_right_coord[1]] != 0:
+                                elif actual_row[top_right_coord[1]] != 0 and \
+                                        actual_row_index - top_right_coord[0] > MIN_HEIGHT:
                                     # Allora questo è il pixel di edge in basso a destra
-                                    bottom_right_coord.append(actual_row_index)
-                                    bottom_right_coord.append(top_right_coord[1])
-                                    bottom_left_coord.append(actual_row_index)
-                                    bottom_left_coord.append(top_left_coord[1])
+                                    bottom_right_coord = (actual_row_index, top_right_coord[1])
+                                    bottom_left_coord = (actual_row_index, top_left_coord[1])
                                     break
 
-                    if len(bottom_left_coord) < 1 and len(bottom_right_coord) < 1:
-                        # Allora non ho trovato un edge inferiore su entrambe le due colonne,
-                        # occorre ripulire le informazioni delle coordinate top
-                        top_left_coord.clear()
-                        top_right_coord.clear()
-                        bottom_right_coord.clear()
-                        bottom_left_coord.clear()
+                        if len(bottom_left_coord) < 1 and len(bottom_right_coord) < 1:
+                            # Allora non ho trovato un edge inferiore su entrambe le due colonne,
+                            # occorre ripulire le informazioni delle coordinate top
+                            top_left_coord = ()
+                            top_right_coord = ()
+                            bottom_right_coord = ()
+                            bottom_left_coord = ()
 
-                    # Se ho individuato una finestra ne calcolo la media
-                    elif len(bottom_left_coord) > 0 and len(bottom_right_coord) > 0:
+                        # Se ho individuato una finestra ne calcolo la media
+                        elif len(bottom_left_coord) > 0 and len(bottom_right_coord) > 0:
+                            edges_found_gray = edges.copy()
+                            edges_found = cv.cvtColor(edges_found_gray, cv.COLOR_GRAY2RGB)
+                            edges_found = cv.rectangle(edges_found, (top_left_coord[1], top_left_coord[0]),
+                                                       (bottom_right_coord[1], bottom_right_coord[0]), (0, 255, 0),
+                                                       thickness=1)
+                            cv.namedWindow("Faces", cv.WINDOW_NORMAL)
+                            cv.imshow('Faces', edges_found)
+                            cv.waitKey(0)
 
-                        base = abs(top_right_coord[1] - top_left_coord[1])
-                        altezza = abs(bottom_left_coord[0] - top_left_coord[0])
+                            # ii. Extract the sub-window from the edge image
+                            # X-----------Y
+                            # |-----------|
+                            # Z-----------W
+                            tmp_list = []
+                            for row_index_2, row_2 in enumerate(edges):
+                                if top_left_coord[0] <= row_index_2 <= bottom_left_coord[0]:  # X <= row_index_2 <= Z
+                                    for col_index_2, col_2 in enumerate(row_2):
+                                        if bottom_left_coord[1] <= col_index_2 <= \
+                                                bottom_right_coord[1]:  # Z <= row_index_2 <= W
+                                            tmp_list.append(col_2)
+                                        if col_index_2 > bottom_right_coord[1]:
+                                            break
+                                elif row_index_2 > bottom_left_coord[0]:
+                                    break
 
-                        area = base * altezza
-                        # if area > 1000:
-                        edges_found_gray = edges.copy()
-                        edges_found = cv.cvtColor(edges_found_gray, cv.COLOR_GRAY2RGB)
-                        edges_found = cv.rectangle(edges_found, (top_left_coord[1], top_left_coord[0]), (bottom_right_coord[1], bottom_right_coord[0]), (0, 255, 0), thickness=1)
-                        cv.namedWindow("Faces", cv.WINDOW_NORMAL)
-                        cv.imshow('Faces', edges_found)
-                        cv.waitKey(0)
+                            # iii. Calculate its mean (µ)
+                            count = count + 1
+                            mean = sum(tmp_list) / len(tmp_list)
 
-                        # ii. Extract the sub-window from the edge image
-                        # X-----------Y
-                        # |-----------|
-                        # Z-----------W
-                        tmp_list = []
-                        for row_index_2, row_2 in enumerate(edges):
-                            if top_left_coord[0] <= row_index_2 <= bottom_left_coord[0]:  # X <= row_index_2 <= Z
-                                for col_index_2, col_2 in enumerate(row_2):
-                                    if bottom_left_coord[1] <= col_index_2 <= bottom_right_coord[1]:  # Z <= row_index_2 <= W
-                                        tmp_list.append(col_2)
-                                    if col_index_2 > bottom_right_coord[1]:
-                                        break
-                            elif row_index_2 > bottom_left_coord[0]:
-                                break
+                            if mean > 3:  # mean != 0:
+                                print("Media != 0")
+                                x = top_left_coord[1]
+                                y = top_left_coord[0]
+                                w = bottom_right_coord[1]
+                                h = bottom_right_coord[0]
+                                # sub_reg_img contiene il sottorettangolo che abbiamo trovato prima ma in grayscale
+                                sub_reg_img = gaussian[y:h, x:w]
+                                tmp = img.copy()
+                                # salvo la sottofinestra
+                                # sub_reg_col = tmp[y:h, x:w]
+                                # faccio il rilevamento degli occhi
+                                eyes = eye_cascade.detectMultiScale(sub_reg_img)
+                                # Per un rilevamento con meno falsi positivi provare:
+                                # eyes = eye_cascade.detectMultiScale(sub_reg_img, scaleFactor=1.3, minNeighbors=5)
 
-                        # iii. Calculate its mean (µ)
-                        count = count + 1
-                        mean = sum(tmp_list) / len(tmp_list)
+                                if len(eyes) > 0:
+                                    with open(global_path + 'eyeFiles/' + images[:len(images) - 4] + '.eye') as f:
+                                        coordinates = [int(coord) for coord in re.findall(r'\b\d+\b', f.read())]
+                                        # print(coordinates)
+                                        # Ricordiamo che eyes è riferito a una sottoregione
+                                        # dell'immagine mentre coordinates all'intera immagine (senza neppure filtraggi)
 
-                        if mean > 3:  # mean != 0:
-                            print("Media != 0")
-                            x = top_left_coord[1]
-                            y = top_left_coord[0]
-                            w = bottom_right_coord[1]
-                            h = bottom_right_coord[0]
-                            # sub_reg_img contiene il sottorettangolo che abbiamo trovato prima ma in grayscale
-                            sub_reg_img = median2[y:h, x:w]
-                            tmp = img.copy()
-                            # salvo la sottofinestra
-                            sub_reg_col = tmp[y:h, x:w]
-                            # faccio il rilevamento degli occhi
-                            eyes = eye_cascade.detectMultiScale(sub_reg_img)
-                            if len(eyes) > 0:
-                                cv.rectangle(tmp, (x, y), (w, h), (255, 0, 0), 2)
-                                # sub_reg_col = img.copy()
-                                # sub_reg_col = sub_reg_col[y:h, x:w]
-                                # for (ex, ey, ew, eh) in eyes:
-                                # cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
-                                cv.namedWindow("Face", cv.WINDOW_NORMAL)
-                                cv.imshow('Face', tmp)
-                                cv.waitKey(0)
+                                    for (ex, ey, ew, eh) in eyes:
+                                        # (ex, ey) colonna x riga top left della sotto finestra
+                                        # (ex+ew, ey+eh) colonna x riga bottom right della sotto finestra
+                                        # print(x + ex, y + ey, x + ex + ew,
+                                        #      y + ey + eh)  # x e y mi permettono di ottenere le coordinate
+                                        # dall'immagine ritagliata a quella intera
 
-                        else:
-                            print("Media = 0")
+                                        # Se la coordinata del dataset dell'occhio destro è contenuta nel rettangolo
+                                        # individuato dalle quattro coordinate allora questo è un occhio e non un falso positivo:
 
-                        # Ripulisco le liste
-                        top_left_coord.clear()
-                        top_right_coord.clear()
-                        bottom_left_coord.clear()
-                        bottom_right_coord.clear()
+                                        max_value = max(ex + ew, ey + eh)
 
-            # Ripulisco le liste delle coordinate una volta esaurite le colonne della riga
-            top_left_coord.clear()
-            top_right_coord.clear()
-            bottom_left_coord.clear()
-            bottom_right_coord.clear()
-print(count)
+                                        # Controllo occhio dx
+                                        if y + ey <= coordinates[1] <= y + ey + eh and \
+                                                x + ex <= coordinates[0] <= x + ex + ew:
+                                            print("occhio destro trovato")
+                                            # cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                            normalized_coord = [ex / max_value, ey / max_value,
+                                                                (ex + ew) / max_value, (ey + eh) / max_value, 1]
+
+                                        # Controllo occhio sx
+                                        elif y + ey <= coordinates[3] <= y + ey + eh and \
+                                                x + ex <= coordinates[2] <= x + ex + ew:
+                                            print("occhio sinistro trovato")
+                                            normalized_coord = [ex / max_value, ey / max_value,
+                                                                (ex + ew) / max_value, (ey + eh) / max_value, 1]
+                                        else:
+                                            print("La seguente non è una face region")
+                                            normalized_coord = [ex / max_value, ey / max_value,
+                                                                (ex + ew) / max_value, (ey + eh) / max_value, 0]
+
+                                        # cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+                                        with open('feature_files.csv', 'a+', newline='') as f:
+                                            writer_obj = writer(f)
+                                            writer_obj.writerow(normalized_coord)
+                                            f.close()
+
+                                        normalized_coord.clear()
+
+                                    cv.rectangle(tmp, (x, y), (w, h), (255, 0, 0), 2)
+                                    # sub_reg_col = img.copy()
+                                    # sub_reg_col = sub_reg_col[y:h, x:w]
+                                    # for (ex, ey, ew, eh) in eyes:
+                                    #     cv.rectangle(sub_reg_col, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 1)
+
+                                    cv.namedWindow("Face", cv.WINDOW_NORMAL)
+                                    cv.imshow('Face', tmp)
+                                    cv.waitKey(0)
+                                else:
+                                    print("La seguente non è una face region")
+                            else:
+                                print("Media = 0")
+
+                            # Ripulisco le coordinate
+                            top_left_coord = ()
+                            top_right_coord = ()
+                            bottom_left_coord = ()
+                            bottom_right_coord = ()
+
+                # Ripulisco le coordinate una volta esaurite le colonne della riga
+                top_left_coord = ()
+                top_right_coord = ()
+                bottom_left_coord = ()
+                bottom_right_coord = ()
+
+    print("Il numero di sotto-finestre totali individuate e': " + str(count))
+
+
+if __name__ == "__main__":
+    main()
