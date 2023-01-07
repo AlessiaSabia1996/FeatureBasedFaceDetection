@@ -9,7 +9,7 @@ def buildModel(layers_neurons_num, act_functions, loss_fun, optimizer, dropout_v
     if not len(layers_neurons_num) == len(act_functions) == (len(dropout_val) + 1):
         raise ValueError("Error: One of the List sizes is incompatible with the number of layers.")
 
-    initializer = tf.keras.initializers.RandomUniform(minval=min_weight_val, maxval=max_weight_val, seed=5)
+    initializer = tf.keras.initializers.RandomUniform(minval=min_weight_val, maxval=max_weight_val, seed=15)
     model = tf.keras.Sequential()
 
     # Input layer
@@ -23,8 +23,9 @@ def buildModel(layers_neurons_num, act_functions, loss_fun, optimizer, dropout_v
         model.add(tf.keras.layers.Dropout(dropout_val[index]))
 
     # Output layer, does not need dropout
-    model.add(tf.keras.layers.Dense(layers_neurons_num[len(layers_neurons_num)-1],
-                                    activation=act_functions[len(layers_neurons_num)-1], kernel_initializer=initializer))
+    model.add(tf.keras.layers.Dense(layers_neurons_num[len(layers_neurons_num) - 1],
+                                    activation=act_functions[len(layers_neurons_num) - 1],
+                                    kernel_initializer=initializer))
 
     model.compile(loss=loss_fun, optimizer=optimizer, metrics=['accuracy'])
     return model
@@ -35,8 +36,8 @@ def looTrainNeuralNetwork(dataset, epochs):
     y = dataset[:, 4]
 
     # Divido il dataset in training e test set, dopodiché estrapolo il validation set dal test set
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=22)
-    X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.50, random_state=22)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=43)
+    X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.50, random_state=47)
 
     # Creo il modello di rete neurale
     mod = buildModel(layers_neurons_num=[4, 4, 1], act_functions=['linear', 'sigmoid', 'sigmoid'],
@@ -54,25 +55,35 @@ def looTrainNeuralNetwork(dataset, epochs):
     _, accuracy = mod.evaluate(X_test, y_test)
     print('Accuracy: %.2f' % (accuracy * 100))
 
+    fig, axes = plt.subplots(1, 2)
+
     # Plot accuratezza
-    plt.plot(history.history['accuracy'])
-    plt.plot(history.history['val_accuracy'])
-    plt.title('model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.show()
+    axes[0].plot(history.history['accuracy'])
+    axes[0].plot(history.history['val_accuracy'])
+    axes[0].set_title('Model accuracy')
+    axes[0].set(xlabel='epoch', ylabel='accuracy')
+    axes[0].legend(['train', 'valid'], loc='upper left')
+    x0, x1 = axes[0].get_xlim()
+    y0, y1 = axes[0].get_ylim()
+    axes[0].set_aspect(abs(x1 - x0) / abs(y1 - y0))
 
     # Plot funzione di errore
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.title('model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'valid'], loc='upper left')
-    plt.show()
+    axes[1].plot(history.history['loss'])
+    axes[1].plot(history.history['val_loss'])
+    axes[1].set_title('Model loss')
+    axes[1].set(xlabel='epoch', ylabel='loss')
+    axes[1].legend(['train', 'valid'], loc='upper left')
+    x0, x1 = axes[1].get_xlim()
+    y0, y1 = axes[1].get_ylim()
+    axes[1].set_aspect(abs(x1 - x0) / abs(y1 - y0))
 
-    # mod.save("modelloReteNeurale-LeaveOneOut.h5")
+    plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=0.5, hspace=None)
+
+    # plt.show()
+    plt.savefig('plots/plot.png', bbox_inches='tight', transparent=True, dpi=200)
+    plt.savefig('plots/plot_noTransparency.png', bbox_inches='tight', dpi=200)
+
+    # mod.save("modelloReteNeurale-2-LeaveOneOut.h5")
 
 
 def kfoldTrainNeuralNetwork(dataset, epochs):
@@ -96,7 +107,7 @@ def kfoldTrainNeuralNetwork(dataset, epochs):
         print(f'Training for fold {fold_no} ...')
 
         # Addestramento del modello
-        history = model.fit(X[train], y[train], batch_size=64, epochs=epochs, verbose=1)
+        model.fit(X[train], y[train], batch_size=64, epochs=epochs, verbose=1)
 
         # Generazione delle metriche
         scores = model.evaluate(X[test], y[test], verbose=0)

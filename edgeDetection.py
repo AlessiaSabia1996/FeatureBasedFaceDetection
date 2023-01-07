@@ -1,5 +1,6 @@
 import numpy as np
 import cv2 as cv
+from scipy import ndimage
 
 
 def cannyEdgeDetection(sigma, img):
@@ -9,6 +10,28 @@ def cannyEdgeDetection(sigma, img):
     upper = int(min(255, (1.0 + sigma) * v))
 
     return cv.Canny(img, threshold1=lower, threshold2=upper, L2gradient=True)
+
+
+def robertsCrossEdgeDetection(img):
+    img_tmp = np.asarray(img, dtype="int32")
+
+    roberts_cross_v = np.array([[1, 0],
+                                [0, -1]])
+
+    roberts_cross_h = np.array([[0, 1],
+                                [-1, 0]])
+
+    vertical = ndimage.convolve(img_tmp, roberts_cross_v)
+    horizontal = ndimage.convolve(img_tmp, roberts_cross_h)
+
+    edged_img = np.sqrt(np.square(horizontal) + np.square(vertical))
+
+    edged_img = np.asarray(np.clip(edged_img, 0, 255), dtype="uint8")
+
+    # Thresholding binario
+    _, edges = cv.threshold(edged_img, 20, 255, cv.THRESH_BINARY)
+
+    return edgeThinning(img, edges)
 
 
 def sobelEdgeDetection(img, kernelSize):
@@ -22,8 +45,11 @@ def sobelEdgeDetection(img, kernelSize):
     # Thresholding binario
     retval, edges = cv.threshold(edges, 70, 255, cv.THRESH_BINARY)
 
-    # Edge thinning:
+    return edgeThinning(img, edges)
 
+
+def edgeThinning(img, edges):
+    # Edge thinning:
     kernel = cv.getStructuringElement(cv.MORPH_CROSS, (3, 3))
     # Creiamo un'immagine di output vuota per memorizzare i valori
     thin = np.zeros(img.shape, dtype='uint8')
